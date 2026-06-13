@@ -4,6 +4,7 @@ import numpy as np
 import joblib
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime
 
 st.set_page_config(
     page_title="AI SOC Dashboard",
@@ -11,250 +12,301 @@ st.set_page_config(
     layout="wide"
 )
 
-# =========================
+# ------------------------
 # LOAD FILES
-# =========================
+# ------------------------
 
-model = joblib.load("model.pkl")
-scaler = joblib.load("scaler.pkl")
-columns = joblib.load("columns.pkl")
-feature_importance = joblib.load("feature_importance.pkl")
+@st.cache_resource
+def load_assets():
+    model = joblib.load("model.pkl")
+    scaler = joblib.load("scaler.pkl")
+    columns = joblib.load("columns.pkl")
+    feature_importance = joblib.load("feature_importance.pkl")
 
-# =========================
+    return model, scaler, columns, feature_importance
+
+model, scaler, columns, feature_importance = load_assets()
+
+# ------------------------
+# SESSION STATE
+# ------------------------
+
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# ------------------------
 # HEADER
-# =========================
+# ------------------------
 
-st.title("🚨 AI Driven Network Intrusion Detection & SOC Dashboard")
+st.title("🚨 AI-Driven Security Operations Center")
 
 st.markdown("""
-### Enterprise Security Operations Center
+### Network Intrusion Detection System
 
-Machine Learning Based Intrusion Detection System
-using NSL-KDD Dataset
+**Model:** Random Forest  
+**Accuracy:** 99.90%  
+**Dataset:** NSL-KDD
 """)
 
-# =========================
+# ------------------------
 # KPI CARDS
-# =========================
+# ------------------------
 
-col1,col2,col3,col4 = st.columns(4)
+c1,c2,c3,c4 = st.columns(4)
 
-col1.metric("Model", "Random Forest")
-col2.metric("Accuracy", "99.90%")
-col3.metric("Features", len(columns))
-col4.metric("Status", "ACTIVE")
-
-st.divider()
-
-# =========================
-# SIDEBAR
-# =========================
-
-st.sidebar.header("Prediction Panel")
-
-selected_features = feature_importance.head(10)["Feature"].tolist()
-
-user_input = {}
-
-for feature in selected_features:
-
-    user_input[feature] = st.sidebar.number_input(
-        feature,
-        value=0.0
-    )
-
-# =========================
-# SINGLE PREDICTION
-# =========================
-
-st.subheader("🔍 Real-Time Threat Detection")
-
-if st.sidebar.button("Analyze Threat"):
-
-    row = pd.DataFrame(
-        np.zeros((1,len(columns))),
-        columns=columns
-    )
-
-    for feature,value in user_input.items():
-        row[feature] = value
-
-    scaled = scaler.transform(row)
-
-    pred = model.predict(scaled)[0]
-
-    prob = model.predict_proba(scaled)[0][1]
-
-    c1,c2 = st.columns(2)
-
-    with c1:
-
-        if pred == 1:
-            st.error("⚠️ ATTACK DETECTED")
-        else:
-            st.success("✅ NORMAL TRAFFIC")
-
-        st.metric(
-            "Threat Probability",
-            f"{prob*100:.2f}%"
-        )
-
-    with c2:
-
-        fig = go.Figure(
-            go.Indicator(
-                mode="gauge+number",
-                value=prob*100,
-                title={"text":"Threat Score"}
-            )
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-# =========================
-# CSV ANALYZER
-# =========================
+c1.metric("Model", "Random Forest")
+c2.metric("Accuracy", "99.90%")
+c3.metric("Features", len(columns))
+c4.metric("Status", "ACTIVE")
 
 st.divider()
 
-st.subheader("📂 Bulk Traffic Analyzer")
+# ------------------------
+# TABS
+# ------------------------
 
-uploaded_file = st.file_uploader(
-    "Upload Network Traffic CSV",
-    type=["csv"]
+tab1, tab2, tab3 = st.tabs(
+    [
+        "Threat Detection",
+        "Analytics",
+        "SOC Monitor"
+    ]
 )
 
-if uploaded_file is not None:
+# ==================================================
+# TAB 1
+# ==================================================
 
-    test_df = pd.read_csv(uploaded_file)
+with tab1:
 
-    st.write("Preview")
+    st.subheader("Quick Threat Scan")
 
-    st.dataframe(
-        test_df.head()
+    col1,col2 = st.columns(2)
+
+    src_bytes = col1.number_input(
+        "Source Bytes",
+        min_value=0.0,
+        value=100.0
     )
 
-    if st.button("Scan CSV"):
+    dst_bytes = col2.number_input(
+        "Destination Bytes",
+        min_value=0.0,
+        value=200.0
+    )
 
-        try:
+    if st.button("Analyze Threat"):
 
-            test_df = test_df[columns]
+        row = pd.DataFrame(
+            np.zeros((1,len(columns))),
+            columns=columns
+        )
 
-            scaled = scaler.transform(test_df)
+        if "src_bytes" in row.columns:
+            row["src_bytes"] = src_bytes
 
-            preds = model.predict(scaled)
+        if "dst_bytes" in row.columns:
+            row["dst_bytes"] = dst_bytes
 
-            test_df["Prediction"] = preds
+        scaled = scaler.transform(row)
 
-            attacks = int(
-                (preds==1).sum()
+        pred = model.predict(scaled)[0]
+
+        prob = model.predict_proba(scaled)[0][1]
+
+        if prob < 0.30:
+            severity = "LOW"
+
+        elif prob < 0.70:
+            severity = "MEDIUM"
+
+        else:
+            severity = "HIGH"
+
+        c1,c2 = st.columns(2)
+
+        with c1:
+
+            if pred == 1:
+                st.error("⚠️ ATTACK DETECTED")
+            else:
+                st.success("✅ NORMAL TRAFFIC")
+
+            st.metric(
+                "Threat Score",
+                f"{prob*100:.2f}%"
             )
 
-            normals = int(
-                (preds==0).sum()
+            st.metric(
+                "Severity",
+                severity
             )
 
-            c1,c2,c3 = st.columns(3)
+        with c2:
 
-            c1.metric(
-                "Total Records",
-                len(test_df)
-            )
-
-            c2.metric(
-                "Attacks",
-                attacks
-            )
-
-            c3.metric(
-                "Normal",
-                normals
-            )
-
-            fig = px.pie(
-                names=["Normal","Attack"],
-                values=[normals,attacks],
-                title="Traffic Distribution"
+            gauge = go.Figure(
+                go.Indicator(
+                    mode="gauge+number",
+                    value=prob*100,
+                    title={"text":"Threat Level"}
+                )
             )
 
             st.plotly_chart(
-                fig,
+                gauge,
                 use_container_width=True
             )
 
-            st.dataframe(
-                test_df.head(20)
-            )
+        st.session_state.history.append({
 
-        except Exception as e:
-            st.error(str(e))
+            "Time":
+                datetime.now().strftime(
+                    "%H:%M:%S"
+                ),
 
-# =========================
-# FEATURE IMPORTANCE
-# =========================
+            "Threat Score":
+                round(prob*100,2),
 
-st.divider()
+            "Result":
+                "Attack" if pred==1 else "Normal"
+        })
 
-st.subheader("📊 Top Features")
+# ==================================================
+# TAB 2
+# ==================================================
 
-fig = px.bar(
-    feature_importance.head(15),
-    x="Importance",
-    y="Feature",
-    orientation="h"
-)
+with tab2:
 
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
+    st.subheader("Model Comparison")
 
-# =========================
-# MODEL COMPARISON
-# =========================
+    results = pd.DataFrame({
 
-st.divider()
+        "Model":[
 
-st.subheader("🤖 Model Comparison")
+            "Random Forest",
 
-results = pd.DataFrame({
+            "Decision Tree",
 
-    "Model":[
-        "Random Forest",
-        "Decision Tree",
-        "Gradient Boosting",
-        "Logistic Regression"
-    ],
+            "Gradient Boosting",
 
-    "Accuracy":[
-        99.90,
-        99.85,
-        99.62,
-        97.23
-    ]
-})
+            "Logistic Regression"
+        ],
 
-fig2 = px.bar(
-    results,
-    x="Model",
-    y="Accuracy",
-    text="Accuracy"
-)
+        "Accuracy":[
 
-st.plotly_chart(
-    fig2,
-    use_container_width=True
-)
+            99.90,
 
-# =========================
-# FOOTER
-# =========================
+            99.85,
+
+            99.62,
+
+            97.23
+        ]
+    })
+
+    fig = px.bar(
+
+        results,
+
+        x="Model",
+
+        y="Accuracy",
+
+        text="Accuracy",
+
+        title="ML Model Performance"
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+    st.subheader(
+        "Feature Importance"
+    )
+
+    fig2 = px.bar(
+
+        feature_importance.head(15),
+
+        x="Importance",
+
+        y="Feature",
+
+        orientation="h",
+
+        title="Top 15 Important Features"
+    )
+
+    st.plotly_chart(
+        fig2,
+        use_container_width=True
+    )
+
+# ==================================================
+# TAB 3
+# ==================================================
+
+with tab3:
+
+    st.subheader(
+        "SOC Alert Feed"
+    )
+
+    if len(
+        st.session_state.history
+    ) == 0:
+
+        st.info(
+            "No alerts generated yet."
+        )
+
+    else:
+
+        history_df = pd.DataFrame(
+            st.session_state.history
+        )
+
+        st.dataframe(
+            history_df,
+            use_container_width=True
+        )
+
+        pie = px.pie(
+
+            history_df,
+
+            names="Result",
+
+            title="Attack Distribution"
+        )
+
+        st.plotly_chart(
+            pie,
+            use_container_width=True
+        )
+
+        trend = px.line(
+
+            history_df,
+
+            x="Time",
+
+            y="Threat Score",
+
+            markers=True,
+
+            title="Threat Trend"
+        )
+
+        st.plotly_chart(
+            trend,
+            use_container_width=True
+        )
 
 st.divider()
 
 st.success(
-    "AI Driven Network Intrusion Detection & SOC Dashboard"
+    "AI-Driven Network Intrusion Detection & SOC Dashboard"
 )
